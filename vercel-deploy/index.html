@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NamelessAI Voice</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>body{background:#09090b;color:#fafafa} .glass{background:rgba(24,24,27,.82);border:1px solid #27272a;backdrop-filter:blur(16px)} .bubble{max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere}</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-4xl mx-auto min-h-screen flex flex-col p-4">
+<header class="flex items-center justify-between py-3 border-b border-zinc-800">
+<div><h1 class="font-bold text-xl">Nameless<span class="text-violet-400">AI</span></h1><p class="text-xs text-zinc-500">Voice assistant</p></div>
+<div class="flex gap-2 items-center"><span id="account" class="text-xs text-zinc-400"></span><button id="authBtn" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm">Sign in</button></div>
+</header>
+<main id="messages" class="flex-1 py-6 space-y-4 overflow-y-auto"><div class="text-zinc-400 text-center text-sm mt-10">Sign in to start chatting with NamelessAI.</div></main>
+<div class="glass rounded-2xl p-3">
+<div class="flex gap-2"><textarea id="prompt" rows="1" placeholder="Ask NamelessAI anything…" class="flex-1 bg-transparent outline-none resize-none p-2"></textarea><button id="mic" title="Voice input" class="rounded-xl border border-zinc-700 px-3">🎙️</button><button id="send" class="bg-violet-600 rounded-xl px-5 font-medium">Send</button></div>
+<p id="status" class="text-xs text-zinc-500 px-2 pt-2"></p></div>
+</div>
+<div id="modal" class="hidden fixed inset-0 bg-black/70 items-center justify-center p-4"><div class="glass rounded-2xl p-6 w-full max-w-sm"><h2 class="font-semibold text-lg mb-4">Sign in to NamelessAI</h2><input id="email" type="email" placeholder="Email" class="w-full p-3 mb-3 bg-zinc-900 rounded-xl border border-zinc-700"><input id="password" type="password" placeholder="Password" class="w-full p-3 mb-4 bg-zinc-900 rounded-xl border border-zinc-700"><button id="login" class="w-full p-3 bg-violet-600 rounded-xl mb-2">Sign in</button><button id="signup" class="w-full p-3 border border-zinc-700 rounded-xl">Create account</button><button id="close" class="w-full text-zinc-500 text-sm mt-3">Close</button><p id="authMsg" class="text-xs text-zinc-400 mt-3"></p></div></div>
+<script>
+const CFG={SUPABASE_URL:"https://nzaelikbjumaidaombmp.supabase.co",SUPABASE_ANON_KEY:"REPLACE_WITH_ANON_KEY"};
+const sb=window.supabase.createClient(CFG.SUPABASE_URL,CFG.SUPABASE_ANON_KEY);
+const $=id=>document.getElementById(id);let session=null,history=[];
+function modal(show){$('modal').classList.toggle('hidden',!show);$('modal').classList.toggle('flex',show)}
+function add(role,text){const wrap=document.createElement('div');wrap.className='flex '+(role==='user'?'justify-end':'justify-start');const b=document.createElement('div');b.className='bubble rounded-2xl p-4 '+(role==='user'?'bg-violet-700':'glass');b.textContent=text;wrap.appendChild(b);$('messages').appendChild(wrap);$('messages').scrollTop=$('messages').scrollHeight}
+async function refresh(){const {data}=await sb.auth.getSession();session=data.session;$('account').textContent=session?.user?.email||'';$('authBtn').textContent=session?'Sign out':'Sign in';}
+sb.auth.onAuthStateChange((_e,s)=>{session=s;$('account').textContent=s?.user?.email||'';$('authBtn').textContent=s?'Sign out':'Sign in';});
+$('authBtn').onclick=async()=>{if(session){await sb.auth.signOut();history=[];$('messages').innerHTML='';$('status').textContent='Signed out.'}else modal(true)};
+$('close').onclick=()=>modal(false);
+$('login').onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:$('email').value,password:$('password').value});$('authMsg').textContent=error?.message||'Signed in.';if(!error)modal(false)};
+$('signup').onclick=async()=>{const {error}=await sb.auth.signUp({email:$('email').value,password:$('password').value});$('authMsg').textContent=error?.message||'Account created. Check your email if confirmation is enabled.'};
+async function send(){const text=$('prompt').value.trim();if(!text)return;if(!session){modal(true);$('authMsg').textContent='Please sign in first.';return} $('prompt').value='';add('user',text);history.push({role:'user',parts:[{text}]});$('status').textContent='NamelessAI is thinking…';$('send').disabled=true;try{const {data:{session:s}}=await sb.auth.getSession();const res=await fetch('/api/agent-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.access_token},body:JSON.stringify({messages:history})});const data=await res.json();if(!res.ok)throw new Error(data.error||'Request failed');const reply=data.reply||'No response.';add('assistant',reply);history.push({role:'model',parts:[{text:reply}]});$('status').textContent='';}catch(e){add('assistant','Sorry, I could not answer. '+e.message);$('status').textContent='Error: '+e.message;}finally{$('send').disabled=false}}
+$('send').onclick=send;$('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+$('mic').onclick=()=>{if(!SpeechRecognition){$('status').textContent='Voice input is not supported in this browser. Try Chrome.';return}const r=new SpeechRecognition();r.lang='en-US';r.interimResults=false;r.onresult=e=>{$('prompt').value=e.results[0][0].transcript;send()};r.onerror=e=>$('status').textContent='Microphone error: '+e.error;r.start()};
+refresh();
+</script>
+</body></html>
